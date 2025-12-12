@@ -1,0 +1,50 @@
+name: CI/CD Pipeline - Docker y Render
+
+on:
+  push:
+    branches:
+      - main  # Ejecutar cuando se haga push a la rama 'main'
+
+env:
+  DOCKER_IMAGE_NAME: entrega-continua
+  DOCKER_HUB_USER: ${{ secrets.DOCKER_USERNAME }}
+  IMAGE_TAG: ${{ github.sha }} # Usamos el SHA del commit como tag único
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+    
+      - name: Checkout del Repositorio
+        uses: actions/checkout@v4
+
+      - name: Iniciar Sesión en Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKER_HUB_USER }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Configurar Docker Buildx (para construir la imagen)
+        uses: docker/setup-buildx-action@v3
+
+      - name: Construir y Subir la Imagen a Docker Hub
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: | # Sube con dos tags: el tag del commit y el tag 'latest'
+            ${{ env.DOCKER_HUB_USER }}/${{ env.DOCKER_IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ${{ env.DOCKER_HUB_USER }}/${{ env.DOCKER_IMAGE_NAME }}:latest
+
+  deploy-to-render:
+    runs-on: ubuntu-latest
+    needs: build-and-push # Asegura que el despliegue solo corra si la imagen fue subida con éxito
+    steps:
+      - name: Despliegue Automático en Render.com
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: 'https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys'
+          method: 'POST'
+          customHeaders: '{"Accept": "application/json", "Authorization": "Bearer ${{ secrets.RENDER_API_KEY }}"}'
+          contentType: 'application/json'
+          data: '{ "clearCache": "false" }'
